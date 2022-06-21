@@ -1,0 +1,11 @@
+[package]
+name = "torch"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+shuttle-service = { version = "0.3.3", features = ["web-tide"] }
+tch = "0.7.2"
+tide = "0.16.0"
