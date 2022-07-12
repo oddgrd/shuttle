@@ -496,4 +496,40 @@ where
     }
 }
 
+#[cfg(feature = "web-actix-web")]
+pub struct AppFactory<F> {
+    factory: F,
+}
+
+#[cfg(feature = "web-actix-web")]
+#[async_trait]
+impl<F, T> Service for AppFactory<F>
+where
+    F: Fn() -> actix_web::App<T> + Send + Sync + Clone + 'static,
+    T: actix_service::ServiceFactory<
+            actix_web::dev::ServiceRequest,
+            Response = actix_web::dev::ServiceResponse,
+            Config = (),
+            Error = actix_web::Error,
+            InitError = (),
+        >
+        + 'static
+        + Send,
+    T::Service: 'static,
+{
+    async fn bind(mut self: Box<Self>, addr: SocketAddr) -> Result<(), error::Error> {
+        let app_factory = self.factory.clone();
+        actix_web::HttpServer::new(move || app_factory())
+            .bind(addr)?
+            .run()
+            .await
+            .map_err(error::CustomError::new)?;
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "web-actix-web")]
+pub type ShuttleActixWeb<F> = Result<AppFactory<F>, Error>;
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
