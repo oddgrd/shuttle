@@ -24,6 +24,7 @@ regex = "1.5.6"
 rocket = { version = "0.5.0-rc.2", optional = true }
 actix-web = { version = "4.1.0", optional = true }
 actix-service = { version = "2.0.2", optional = true }
+actix-http = { version = "3.2.1", optional = true }
 sqlx = { version = "0.5.13", optional = true }
 sync_wrapper = { version = "0.1.1", optional = true }
 thiserror = "1.0.31"
@@ -67,4 +68,4 @@ web-axum = ["axum", "sync_wrapper"]
 web-rocket = ["rocket"]
 web-tide = ["tide"]
 web-tower = ["tower", "hyper"]
-web-actix-web = ["actix-web", "actix-service"]
+web-actix-web = ["actix-web", "actix-service", "actix-http"]

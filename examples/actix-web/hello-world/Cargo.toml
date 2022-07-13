@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4.1.0"
+actix-service = "2.0.2"
+actix-http =  "3.2.1"
 
 [dependencies.shuttle-service]
 version = "0.4.0"
