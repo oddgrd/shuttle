@@ -24,7 +24,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 use tracing::{error, trace};
 use wasi_common::file::FileCaps;
-use wasmtime::{Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::sync::net::UnixStream as WasiUnixStream;
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder};
 
@@ -61,7 +61,7 @@ impl Runtime for AxumWasm {
         let wasm_path = request.into_inner().path;
         trace!(wasm_path, "loading");
 
-        let router = Router::new(wasm_path);
+        let router = Router::new(wasm_path).await;
 
         *self.router.lock().unwrap() = Some(router);
 
@@ -141,7 +141,10 @@ struct RouterBuilder {
 
 impl RouterBuilder {
     pub fn new() -> Self {
-        let engine = Engine::default();
+        let mut config = Config::new();
+        config.async_support(true);
+
+        let engine = Engine::new(&config).unwrap();
 
         let mut linker: Linker<WasiCtx> = Linker::new(&engine);
         wasmtime_wasi::add_to_linker(&mut linker, |s| s).unwrap();
@@ -167,7 +170,7 @@ impl RouterBuilder {
         self
     }
 
-    pub fn build(mut self) -> Router {
+    pub async fn build(mut self) -> Router {
         let mut buf = Vec::new();
         self.src.unwrap().read_to_end(&mut buf).unwrap();
         let module = Module::new(&self.engine, buf).unwrap();
@@ -177,7 +180,8 @@ impl RouterBuilder {
         }
 
         self.linker
-            .module(&mut self.store, "axum", &module)
+            .module_async(&mut self.store, "axum", &module)
+            .await
             .unwrap();
         let inner = RouterInner {
             store: self.store,
@@ -237,7 +241,8 @@ impl RouterInner {
             .unwrap()
             .typed::<(RawFd, RawFd), (), _>(&self.store)
             .unwrap()
-            .call(&mut self.store, (3, 4))
+            .call_async(&mut self.store, (3, 4))
+            .await
             .unwrap();
 
         // read response parts from host
@@ -277,8 +282,8 @@ impl Router {
         RouterBuilder::new()
     }
 
-    pub fn new<P: AsRef<Path>>(src: P) -> Self {
-        Self::builder().src(src).build()
+    pub async fn new<P: AsRef<Path>>(src: P) -> Self {
+        Self::builder().src(src).build().await
     }
 
     /// Consume the router, build and run server until a stop signal is received via the
@@ -328,7 +333,7 @@ pub mod tests {
 
     #[tokio::test]
     async fn axum() {
-        let axum = Router::new("axum.wasm");
+        let axum = Router::new("axum.wasm").await;
         let mut inner = axum.inner.lock().await;
 
         // GET /hello
