@@ -89,6 +89,11 @@ curl  localhost:7002/hello
 curl  localhost:7002/goodbye
 ```
 
+Benchmark the service with a [wrk](https://github.com/wg/wrk) container:
+```bash
+docker run --network="host" --rm williamyeh/wrk -t4 -c200 -d10s http://127.0.0.1:7002/hello
+```
+
 ## shuttle-legacy
 
 Load and run an .so library that implements `shuttle_service::Service`. 
