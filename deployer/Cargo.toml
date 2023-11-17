@@ -57,6 +57,7 @@ utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 ulid = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
+async-posthog = { git = "https://github.com/rivet-gg/posthog-rs", branch = "nathan/correct-batch-support" }
 
 [dev-dependencies]
 ctor = { workspace = true }

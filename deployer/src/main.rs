@@ -59,6 +59,9 @@ async fn main() {
         }
     };
 
+    // TODO: pass in posthog api-key through args
+    let posthog_client = async_posthog::client("api-key");
+
     setup_tracing(
         tracing_subscriber::registry()
             .with(StateChangeLayer {
@@ -84,7 +87,7 @@ async fn main() {
         _ = start_proxy(args.proxy_address, args.proxy_fqdn.clone(), persistence.clone()) => {
             error!("Proxy stopped.")
         },
-        _ = start(persistence, runtime_manager, logger_batcher, logger_client, builder_client, args) => {
+        _ = start(persistence, runtime_manager, logger_batcher, logger_client, builder_client, posthog_client, args) => {
             error!("Deployment service stopped.")
         },
     }

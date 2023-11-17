@@ -412,6 +412,12 @@ pub async fn create_service(
         deployment_id = %id,
     );
 
+    let event =
+        async_posthog::Event::new(format!("shuttle_api_create_service_{id}"), id.to_string());
+    if let Err(err) = deployment_manager.posthog_client().capture(event).await {
+        error!(error = %err, "failed to send event to posthog")
+    };
+
     let service = persistence.get_or_create_service(&service_name).await?;
     let pid = persistence.project_id();
 
