@@ -1,8 +1,7 @@
-use std::net::IpAddr;
-
+use headers::HeaderMapExt;
+use shuttle_common::backends::headers::XShuttleDeployment;
 use tonic::{
     metadata::{KeyAndValueRef, MetadataMap},
-    transport::server::TcpConnectInfo,
     Status,
 };
 use tower::BoxError;
@@ -17,22 +16,23 @@ pub const BURST_SIZE: u32 = 6;
 pub struct TonicPeerIpKeyExtractor;
 
 impl KeyExtractor for TonicPeerIpKeyExtractor {
-    type Key = IpAddr;
+    type Key = XShuttleDeployment;
 
     fn name(&self) -> &'static str {
-        "peer IP"
+        "peer deployment ID"
     }
 
     fn extract<T>(&self, req: &http::Request<T>) -> Result<Self::Key, GovernorError> {
-        req.extensions()
-            .get::<TcpConnectInfo>()
-            .and_then(|info| info.remote_addr())
-            .map(|addr| addr.ip())
+        let headers = req.headers();
+        println!("logger request headers: {:?}", headers);
+
+        headers
+            .typed_get::<XShuttleDeployment>()
             .ok_or(GovernorError::UnableToExtractKey)
     }
 
     fn key_name(&self, key: &Self::Key) -> Option<String> {
-        Some(key.to_string())
+        Some(key.0.to_string())
     }
 }
 

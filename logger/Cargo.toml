@@ -12,6 +12,7 @@ shuttle-proto = { workspace = true, features = ["logger"] }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
+headers.workspace = true
 http = { workspace = true }
 prost-types = { workspace = true }
 serde_json = { workspace = true }

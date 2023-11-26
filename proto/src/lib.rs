@@ -265,10 +265,16 @@ pub mod logger {
                 return;
             };
 
-            if let Err(error) = self
-                .store_logs(Request::new(StoreLogsRequest { logs: items }))
-                .await
-            {
+            let mut store_logs_request = Request::new(StoreLogsRequest { logs: items });
+
+            store_logs_request.metadata_mut().insert(
+                "x-shuttle-deployment-id",
+                item.deployment_id
+                    .parse()
+                    .expect("deployment id should be parsed to ascii metadatavalue"),
+            );
+
+            if let Err(error) = self.store_logs(store_logs_request).await {
                 match error.code() {
                     tonic::Code::Unavailable => {
                         if error.metadata().get("x-ratelimit-limit").is_some() {
