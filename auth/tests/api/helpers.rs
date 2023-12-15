@@ -9,31 +9,62 @@ use once_cell::sync::Lazy;
 use serde_json::Value;
 use shuttle_auth::{pgpool_init, ApiBuilder};
 use shuttle_common::claims::{AccountTier, Claim};
-use shuttle_common_tests::postgres::DockerInstance;
+use shuttle_common_tests::test_container::{
+    postgres_test_container, DockerInstanceBuilder, PostgresContainerExt, TestDockerInstance,
+};
 use sqlx::query;
 use std::{
     net::SocketAddr,
     str::FromStr,
     sync::{Arc, Mutex},
 };
+use stripe::{
+    CreatePrice, CreatePriceRecurring, CreatePriceRecurringInterval, CreateProduct,
+    CreateSubscription, CreateSubscriptionItems, Currency, CustomerId, IdOrCreate,
+};
 use tower::ServiceExt;
 
 pub(crate) const ADMIN_KEY: &str = "ndh9z58jttoes3qv";
 
-static PG: Lazy<DockerInstance> = Lazy::new(DockerInstance::default);
+static PG: Lazy<TestDockerInstance> =
+    Lazy::new(|| postgres_test_container(15, "auth-postgres-test"));
+
+static STRIPE: Lazy<TestDockerInstance> = Lazy::new(|| {
+    let container_name = "stripe_test_container";
+    DockerInstanceBuilder::new(
+        container_name,
+        "docker.io/adrienverge/localstripe:latest",
+        8420,
+    )
+    .is_ready_cmd(&[
+        "exec",
+        container_name,
+        "curl",
+        "localhost:8420/v1/customers",
+        "-u",
+        "sk_test_123",
+    ])
+    .host_port(8420)
+    .build()
+});
+
 #[ctor::dtor]
 fn cleanup() {
     PG.cleanup();
+    STRIPE.cleanup();
 }
 
 pub(crate) struct TestApp {
     pub router: Router,
     pub mocked_stripe_server: MockedStripeServer,
+    pub local_stripe_client: stripe::Client,
 }
 
 /// Initialize a router with an in-memory sqlite database for each test.
 pub(crate) async fn app() -> TestApp {
-    let pg_pool = pgpool_init(PG.get_unique_uri().as_str()).await.unwrap();
+    let pg_pool = pgpool_init(PG.create_unique_database().as_str())
+        .await
+        .unwrap();
 
     let mocked_stripe_server = MockedStripeServer::default();
     // Insert an admin user for the tests.
@@ -49,8 +80,8 @@ pub(crate) async fn app() -> TestApp {
         .with_pg_pool(pg_pool)
         .with_sessions()
         .with_stripe_client(stripe::Client::from_url(
-            mocked_stripe_server.uri.to_string().as_str(),
-            "",
+            format!("http://{}", STRIPE.uri).as_str(),
+            "sk_test_123",
         ))
         .with_jwt_signing_private_key("LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUR5V0ZFYzhKYm05NnA0ZGNLTEwvQWNvVUVsbUF0MVVKSTU4WTc4d1FpWk4KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=".to_string())
         .into_router();
@@ -58,6 +89,11 @@ pub(crate) async fn app() -> TestApp {
     TestApp {
         router,
         mocked_stripe_server,
+        // local_stripe_client: reqwest::Client::builder().build().unwrap(),
+        local_stripe_client: stripe::Client::from_url(
+            format!("http://{}", STRIPE.uri).as_str(),
+            "sk_test_123",
+        ),
     }
 }
 
@@ -135,6 +171,61 @@ impl TestApp {
         let public_key = hyper::body::to_bytes(response.into_body()).await.unwrap();
 
         Claim::from_token(token, &public_key).unwrap()
+    }
+
+    pub async fn scaffold_stripe(&self) -> stripe::Subscription {
+        let customer = {
+            let customer = stripe::CreateCustomer {
+                name: Some("oddgrd-test"),
+                email: Some("oddgrd@testmail.com"),
+                ..Default::default()
+            };
+
+            stripe::Customer::create(&self.local_stripe_client, customer)
+                .await
+                .unwrap()
+        };
+
+        // create a new example project
+        let product = {
+            let product = CreateProduct::new("Shuttle Pro");
+
+            stripe::Product::create(&self.local_stripe_client, product)
+                .await
+                .unwrap()
+        };
+
+        let price = {
+            let mut price = CreatePrice::new(Currency::USD);
+            price.product = Some(IdOrCreate::Id(&product.id));
+
+            // Price in USD cents.
+            price.unit_amount = Some(2000);
+            price.recurring = Some(CreatePriceRecurring {
+                interval: CreatePriceRecurringInterval::Month,
+                ..Default::default()
+            });
+            price.expand = &["product"];
+
+            stripe::Price::create(&self.local_stripe_client, price)
+                .await
+                .unwrap()
+        };
+
+        let subscription = {
+            let mut params = CreateSubscription::new(customer.id);
+            params.items = Some(vec![CreateSubscriptionItems {
+                price: Some(price.id.to_string()),
+                ..Default::default()
+            }]);
+            params.expand = &["items", "items.data.price.product", "schedule"];
+
+            stripe::Subscription::create(&self.local_stripe_client, params)
+                .await
+                .unwrap()
+        };
+
+        subscription
     }
 }
 

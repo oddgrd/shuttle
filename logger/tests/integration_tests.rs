@@ -7,6 +7,9 @@ use ctor::dtor;
 use once_cell::sync::Lazy;
 use portpicker::pick_unused_port;
 use shuttle_common::claims::Scope;
+use shuttle_common_tests::test_container::{
+    postgres_test_container, PostgresContainerExt, TestDockerInstance,
+};
 use shuttle_common_tests::JwtScopesLayer;
 use shuttle_logger::{Postgres, Service};
 use shuttle_proto::logger::{
@@ -20,13 +23,12 @@ use tonic::{
     Request,
 };
 
-use shuttle_common_tests::postgres::DockerInstance;
-
 use prost_types::Timestamp;
 
 const SHUTTLE_SERVICE: &str = "test";
 
-static PG: Lazy<DockerInstance> = Lazy::new(DockerInstance::default);
+static PG: Lazy<TestDockerInstance> =
+    Lazy::new(|| postgres_test_container(15, "logger-postgres-test"));
 
 #[dtor]
 fn cleanup() {
@@ -35,7 +37,6 @@ fn cleanup() {
 mod needs_docker {
     use super::*;
     use pretty_assertions::assert_eq;
-
     #[tokio::test]
     async fn store_and_get_logs() {
         let logger_port = pick_unused_port().unwrap();
@@ -184,7 +185,7 @@ mod needs_docker {
 
     fn spawn_server(port: u16) -> JoinHandle<()> {
         let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
-        let pg_uri = Uri::try_from(PG.get_unique_uri()).unwrap();
+        let pg_uri = Uri::try_from(PG.create_unique_database()).unwrap();
 
         tokio::task::spawn(async move {
             let pg = Postgres::new(&pg_uri).await;

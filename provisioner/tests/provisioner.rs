@@ -1,13 +1,38 @@
 mod helpers;
 use ctor::dtor;
-use helpers::{exec_mongosh, exec_psql, DbType, DockerInstance};
+use helpers::{exec_mongosh, MONGODB_CONTAINER_NAME, PG_CONTAINER_NAME};
 use once_cell::sync::Lazy;
 use serde_json::Value;
+use shuttle_common_tests::test_container::{
+    postgres_test_container, DockerInstanceBuilder, TestDockerInstance,
+};
 use shuttle_proto::provisioner::shared;
 use shuttle_provisioner::MyProvisioner;
 
-static PG: Lazy<DockerInstance> = Lazy::new(|| DockerInstance::new(DbType::Postgres));
-static MONGODB: Lazy<DockerInstance> = Lazy::new(|| DockerInstance::new(DbType::MongoDb));
+static PG: Lazy<TestDockerInstance> = Lazy::new(|| postgres_test_container(14, PG_CONTAINER_NAME));
+
+// static PG: Lazy<DockerInstance> = Lazy::new(|| DockerInstance::new(DbType::Postgres));
+static MONGODB: Lazy<TestDockerInstance> = Lazy::new(|| {
+    DockerInstanceBuilder::new(
+        MONGODB_CONTAINER_NAME,
+        "docker.io/library/mongo:5.0.10",
+        27017,
+    )
+    .db_engine("mongodb")
+    .env(&[
+        "MONGO_INITDB_ROOT_USERNAME=mongodb",
+        "MONGO_INITDB_ROOT_PASSWORD=password",
+    ])
+    .is_ready_cmd(&[
+        "exec",
+        MONGODB_CONTAINER_NAME,
+        "mongosh",
+        "--quiet",
+        "--eval",
+        "db",
+    ])
+    .build()
+});
 
 #[dtor]
 fn cleanup() {
@@ -16,6 +41,10 @@ fn cleanup() {
 }
 
 mod needs_docker {
+    use shuttle_common_tests::test_container::exec_psql;
+
+    use crate::helpers::PG_CONTAINER_NAME;
+
     use super::*;
 
     #[tokio::test]
@@ -31,7 +60,10 @@ mod needs_docker {
         .unwrap();
 
         assert_eq!(
-            exec_psql("SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",
+            ),
             ""
         );
 
@@ -41,7 +73,10 @@ mod needs_docker {
             .unwrap();
 
         assert_eq!(
-            exec_psql("SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",
+            ),
             "user-not_exist"
         );
     }
@@ -58,8 +93,14 @@ mod needs_docker {
         .await
         .unwrap();
 
-        exec_psql("CREATE ROLE \"user-exist\" WITH LOGIN PASSWORD 'temp'");
-        let password = exec_psql("SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'");
+        exec_psql(
+            PG_CONTAINER_NAME,
+            "CREATE ROLE \"user-exist\" WITH LOGIN PASSWORD 'temp'",
+        );
+        let password = exec_psql(
+            PG_CONTAINER_NAME,
+            "SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'",
+        );
 
         provisioner
             .request_shared_db("exist", shared::Engine::Postgres(String::new()))
@@ -68,7 +109,10 @@ mod needs_docker {
 
         // Make sure password got cycled
         assert_ne!(
-            exec_psql("SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'",
+            ),
             password
         );
     }
@@ -110,7 +154,10 @@ mod needs_docker {
         .unwrap();
 
         assert_eq!(
-            exec_psql("SELECT datname FROM pg_database WHERE datname = 'db-missing'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT datname FROM pg_database WHERE datname = 'db-missing'",
+            ),
             ""
         );
 
@@ -120,7 +167,10 @@ mod needs_docker {
             .unwrap();
 
         assert_eq!(
-            exec_psql("SELECT datname FROM pg_database WHERE datname = 'db-missing'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT datname FROM pg_database WHERE datname = 'db-missing'",
+            ),
             "db-missing"
         );
     }
@@ -137,10 +187,19 @@ mod needs_docker {
         .await
         .unwrap();
 
-        exec_psql("CREATE ROLE \"user-filled\" WITH LOGIN PASSWORD 'temp'");
-        exec_psql("CREATE DATABASE \"db-filled\" OWNER 'user-filled'");
+        exec_psql(
+            PG_CONTAINER_NAME,
+            "CREATE ROLE \"user-filled\" WITH LOGIN PASSWORD 'temp'",
+        );
+        exec_psql(
+            PG_CONTAINER_NAME,
+            "CREATE DATABASE \"db-filled\" OWNER 'user-filled'",
+        );
         assert_eq!(
-            exec_psql("SELECT datname FROM pg_database WHERE datname = 'db-filled'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT datname FROM pg_database WHERE datname = 'db-filled'",
+            ),
             "db-filled"
         );
 
@@ -150,7 +209,10 @@ mod needs_docker {
             .unwrap();
 
         assert_eq!(
-            exec_psql("SELECT datname FROM pg_database WHERE datname = 'db-filled'",),
+            exec_psql(
+                PG_CONTAINER_NAME,
+                "SELECT datname FROM pg_database WHERE datname = 'db-filled'",
+            ),
             "db-filled"
         );
     }

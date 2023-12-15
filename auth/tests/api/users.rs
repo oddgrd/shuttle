@@ -171,6 +171,66 @@ mod needs_docker {
     }
 
     #[tokio::test]
+    async fn local_stripe_successful_upgrade_to_pro() {
+        let app = app().await;
+
+        let sub = app.scaffold_stripe().await;
+
+        println!("stripe sub: {:?}", sub);
+
+        // // POST user first so one exists in the database.
+        // let response = app.post_user("test-user", "basic").await;
+
+        // assert_eq!(response.status(), StatusCode::OK);
+
+        // let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        // let expected_user: Value = serde_json::from_slice(&body).unwrap();
+
+        // let response = app
+        //     .put_user("test-user", "pro", MOCKED_CHECKOUT_SESSIONS[0])
+        //     .await;
+        // assert_eq!(response.status(), StatusCode::OK);
+
+        // let response = app.get_user("test-user").await;
+        // assert_eq!(response.status(), StatusCode::OK);
+        // let body = hyper::body::to_bytes(response.into_body()).await.unwrap();
+        // let actual_user: Value = serde_json::from_slice(&body).unwrap();
+
+        // assert_eq!(
+        //     expected_user.as_object().unwrap().get("name").unwrap(),
+        //     actual_user.as_object().unwrap().get("name").unwrap()
+        // );
+
+        // assert_eq!(
+        //     expected_user.as_object().unwrap().get("key").unwrap(),
+        //     actual_user.as_object().unwrap().get("key").unwrap()
+        // );
+
+        // assert_eq!(
+        //     actual_user
+        //         .as_object()
+        //         .unwrap()
+        //         .get("account_tier")
+        //         .unwrap(),
+        //     "pro"
+        // );
+
+        // let mocked_subscription_obj: Value = serde_json::from_str(MOCKED_SUBSCRIPTIONS[0]).unwrap();
+        // assert_eq!(
+        //     actual_user
+        //         .as_object()
+        //         .unwrap()
+        //         .get("subscription_id")
+        //         .unwrap(),
+        //     mocked_subscription_obj
+        //         .as_object()
+        //         .unwrap()
+        //         .get("id")
+        //         .unwrap()
+        // );
+    }
+
+    #[tokio::test]
     async fn unsuccessful_upgrade_to_pro() {
         let app = app().await;
 
