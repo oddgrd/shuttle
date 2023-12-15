@@ -1,38 +1,23 @@
 mod helpers;
 use ctor::dtor;
-use helpers::{exec_mongosh, MONGODB_CONTAINER_NAME, PG_CONTAINER_NAME};
+use helpers::exec_mongosh;
 use once_cell::sync::Lazy;
 use serde_json::Value;
-use shuttle_common_tests::test_container::{
-    postgres_test_container, DockerInstanceBuilder, TestDockerInstance,
-};
+use shuttle_common_tests::test_container::{ContainerConfig, ContainerType, DockerInstance};
 use shuttle_proto::provisioner::shared;
 use shuttle_provisioner::MyProvisioner;
 
-static PG: Lazy<TestDockerInstance> = Lazy::new(|| postgres_test_container(14, PG_CONTAINER_NAME));
+static PG: Lazy<DockerInstance> = Lazy::new(|| {
+    let mut config: ContainerConfig = ContainerType::Postgres.into();
 
-// static PG: Lazy<DockerInstance> = Lazy::new(|| DockerInstance::new(DbType::Postgres));
-static MONGODB: Lazy<TestDockerInstance> = Lazy::new(|| {
-    DockerInstanceBuilder::new(
-        MONGODB_CONTAINER_NAME,
-        "docker.io/library/mongo:5.0.10",
-        27017,
-    )
-    .db_engine("mongodb")
-    .env(&[
-        "MONGO_INITDB_ROOT_USERNAME=mongodb",
-        "MONGO_INITDB_ROOT_PASSWORD=password",
-    ])
-    .is_ready_cmd(&[
-        "exec",
-        MONGODB_CONTAINER_NAME,
-        "mongosh",
-        "--quiet",
-        "--eval",
-        "db",
-    ])
-    .build()
+    // The shared postgres instance is version 14.
+    config.image_tag = "14";
+
+    DockerInstance::from_config(config)
 });
+
+static MONGODB: Lazy<DockerInstance> =
+    Lazy::new(|| DockerInstance::from_config(ContainerType::MongoDb.into()));
 
 #[dtor]
 fn cleanup() {
@@ -42,8 +27,6 @@ fn cleanup() {
 
 mod needs_docker {
     use shuttle_common_tests::test_container::exec_psql;
-
-    use crate::helpers::PG_CONTAINER_NAME;
 
     use super::*;
 
@@ -61,7 +44,7 @@ mod needs_docker {
 
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",
             ),
             ""
@@ -74,7 +57,7 @@ mod needs_docker {
 
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT rolname FROM pg_roles WHERE rolname = 'user-not_exist'",
             ),
             "user-not_exist"
@@ -94,11 +77,11 @@ mod needs_docker {
         .unwrap();
 
         exec_psql(
-            PG_CONTAINER_NAME,
+            &PG.container_name,
             "CREATE ROLE \"user-exist\" WITH LOGIN PASSWORD 'temp'",
         );
         let password = exec_psql(
-            PG_CONTAINER_NAME,
+            &PG.container_name,
             "SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'",
         );
 
@@ -110,7 +93,7 @@ mod needs_docker {
         // Make sure password got cycled
         assert_ne!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT passwd FROM pg_shadow WHERE usename = 'user-exist'",
             ),
             password
@@ -155,7 +138,7 @@ mod needs_docker {
 
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT datname FROM pg_database WHERE datname = 'db-missing'",
             ),
             ""
@@ -168,7 +151,7 @@ mod needs_docker {
 
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT datname FROM pg_database WHERE datname = 'db-missing'",
             ),
             "db-missing"
@@ -188,16 +171,16 @@ mod needs_docker {
         .unwrap();
 
         exec_psql(
-            PG_CONTAINER_NAME,
+            &PG.container_name,
             "CREATE ROLE \"user-filled\" WITH LOGIN PASSWORD 'temp'",
         );
         exec_psql(
-            PG_CONTAINER_NAME,
+            &PG.container_name,
             "CREATE DATABASE \"db-filled\" OWNER 'user-filled'",
         );
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT datname FROM pg_database WHERE datname = 'db-filled'",
             ),
             "db-filled"
@@ -210,7 +193,7 @@ mod needs_docker {
 
         assert_eq!(
             exec_psql(
-                PG_CONTAINER_NAME,
+                &PG.container_name,
                 "SELECT datname FROM pg_database WHERE datname = 'db-filled'",
             ),
             "db-filled"
@@ -229,7 +212,11 @@ mod needs_docker {
         .await
         .unwrap();
 
-        let user = exec_mongosh("db.getUser(\"user-not_exist\")", Some("mongodb-not_exist"));
+        let user = exec_mongosh(
+            &MONGODB.container_name,
+            "db.getUser(\"user-not_exist\")",
+            Some("mongodb-not_exist"),
+        );
         assert_eq!(user, "null");
 
         provisioner
@@ -237,7 +224,11 @@ mod needs_docker {
             .await
             .unwrap();
 
-        let user = exec_mongosh("db.getUser(\"user-not_exist\")", Some("mongodb-not_exist"));
+        let user = exec_mongosh(
+            &MONGODB.container_name,
+            "db.getUser(\"user-not_exist\")",
+            Some("mongodb-not_exist"),
+        );
         assert!(user.contains("mongodb-not_exist.user-not_exist"));
     }
 
@@ -254,6 +245,7 @@ mod needs_docker {
         .unwrap();
 
         exec_mongosh(
+            &MONGODB.container_name,
             r#"db.createUser({ 
             user: "user-exist", 
             pwd: "secure_password", 
@@ -265,6 +257,7 @@ mod needs_docker {
         );
 
         let user: Value = serde_json::from_str(&exec_mongosh(
+            &MONGODB.container_name,
             r#"EJSON.stringify(db.getUser("user-exist", 
             { showCredentials: true }
         ))"#,
@@ -282,6 +275,7 @@ mod needs_docker {
             .unwrap();
 
         let user: Value = serde_json::from_str(&exec_mongosh(
+            &MONGODB.container_name,
             r#"EJSON.stringify(db.getUser("user-exist", 
             { showCredentials: true }
         ))"#,

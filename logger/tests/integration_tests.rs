@@ -7,9 +7,7 @@ use ctor::dtor;
 use once_cell::sync::Lazy;
 use portpicker::pick_unused_port;
 use shuttle_common::claims::Scope;
-use shuttle_common_tests::test_container::{
-    postgres_test_container, PostgresContainerExt, TestDockerInstance,
-};
+use shuttle_common_tests::test_container::{ContainerType, DockerInstance, PostgresContainerExt};
 use shuttle_common_tests::JwtScopesLayer;
 use shuttle_logger::{Postgres, Service};
 use shuttle_proto::logger::{
@@ -27,8 +25,8 @@ use prost_types::Timestamp;
 
 const SHUTTLE_SERVICE: &str = "test";
 
-static PG: Lazy<TestDockerInstance> =
-    Lazy::new(|| postgres_test_container(15, "logger-postgres-test"));
+static PG: Lazy<DockerInstance> =
+    Lazy::new(|| DockerInstance::from_config(ContainerType::Postgres.into()));
 
 #[dtor]
 fn cleanup() {

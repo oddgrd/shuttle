@@ -1,15 +1,12 @@
 use std::process::Command;
 
-pub const PG_CONTAINER_NAME: &str = "shuttle_provisioner_test_pg";
-pub const MONGODB_CONTAINER_NAME: &str = "shuttle_provisioner_test_mongodb";
-
 /// Execute commands in `mongosh` via `docker exec` against the provided `database_name`
 /// or against the `admin` database by default
-pub fn exec_mongosh(command: &str, database_name: Option<&str>) -> String {
+pub fn exec_mongosh(container_name: &str, command: &str, database_name: Option<&str>) -> String {
     let output = Command::new("docker")
         .args([
             "exec",
-            MONGODB_CONTAINER_NAME,
+            container_name,
             "mongosh",
             "--quiet",
             "--username",

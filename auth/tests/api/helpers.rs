@@ -9,9 +9,7 @@ use once_cell::sync::Lazy;
 use serde_json::Value;
 use shuttle_auth::{pgpool_init, ApiBuilder};
 use shuttle_common::claims::{AccountTier, Claim};
-use shuttle_common_tests::test_container::{
-    postgres_test_container, DockerInstanceBuilder, PostgresContainerExt, TestDockerInstance,
-};
+use shuttle_common_tests::test_container::{ContainerType, DockerInstance, PostgresContainerExt};
 use sqlx::query;
 use std::{
     net::SocketAddr,
@@ -19,34 +17,20 @@ use std::{
     sync::{Arc, Mutex},
 };
 use stripe::{
+    AttachPaymentMethod, CardDetailsParams, CreatePaymentMethod, CreatePaymentMethodCardUnion,
     CreatePrice, CreatePriceRecurring, CreatePriceRecurringInterval, CreateProduct,
-    CreateSubscription, CreateSubscriptionItems, Currency, CustomerId, IdOrCreate,
+    CreateSubscription, CreateSubscriptionItems, Currency, IdOrCreate, PaymentMethod,
+    PaymentMethodTypeFilter, Subscription,
 };
 use tower::ServiceExt;
 
 pub(crate) const ADMIN_KEY: &str = "ndh9z58jttoes3qv";
 
-static PG: Lazy<TestDockerInstance> =
-    Lazy::new(|| postgres_test_container(15, "auth-postgres-test"));
+static PG: Lazy<DockerInstance> =
+    Lazy::new(|| DockerInstance::from_config(ContainerType::Postgres.into()));
 
-static STRIPE: Lazy<TestDockerInstance> = Lazy::new(|| {
-    let container_name = "stripe_test_container";
-    DockerInstanceBuilder::new(
-        container_name,
-        "docker.io/adrienverge/localstripe:latest",
-        8420,
-    )
-    .is_ready_cmd(&[
-        "exec",
-        container_name,
-        "curl",
-        "localhost:8420/v1/customers",
-        "-u",
-        "sk_test_123",
-    ])
-    .host_port(8420)
-    .build()
-});
+static STRIPE: Lazy<DockerInstance> =
+    Lazy::new(|| DockerInstance::from_config(ContainerType::Stripe.into()));
 
 #[ctor::dtor]
 fn cleanup() {
@@ -80,18 +64,19 @@ pub(crate) async fn app() -> TestApp {
         .with_pg_pool(pg_pool)
         .with_sessions()
         .with_stripe_client(stripe::Client::from_url(
-            format!("http://{}", STRIPE.uri).as_str(),
+            format!("http://localhost:{}", STRIPE.host_port).as_str(),
             "sk_test_123",
         ))
         .with_jwt_signing_private_key("LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1DNENBUUF3QlFZREsyVndCQ0lFSUR5V0ZFYzhKYm05NnA0ZGNLTEwvQWNvVUVsbUF0MVVKSTU4WTc4d1FpWk4KLS0tLS1FTkQgUFJJVkFURSBLRVktLS0tLQo=".to_string())
         .into_router();
 
+    println!("stripe uri: http://localhost:{}", STRIPE.host_port);
     TestApp {
         router,
         mocked_stripe_server,
         // local_stripe_client: reqwest::Client::builder().build().unwrap(),
         local_stripe_client: stripe::Client::from_url(
-            format!("http://{}", STRIPE.uri).as_str(),
+            format!("http://localhost:{}", STRIPE.host_port).as_str(),
             "sk_test_123",
         ),
     }
@@ -173,7 +158,7 @@ impl TestApp {
         Claim::from_token(token, &public_key).unwrap()
     }
 
-    pub async fn scaffold_stripe(&self) -> stripe::Subscription {
+    pub async fn scaffold_stripe(&self) -> Subscription {
         let customer = {
             let customer = stripe::CreateCustomer {
                 name: Some("oddgrd-test"),
@@ -186,7 +171,39 @@ impl TestApp {
                 .unwrap()
         };
 
-        // create a new example project
+        let payment_method = {
+            let pm = PaymentMethod::create(
+                &self.local_stripe_client,
+                CreatePaymentMethod {
+                    type_: Some(PaymentMethodTypeFilter::Card),
+                    card: Some(CreatePaymentMethodCardUnion::CardDetailsParams(
+                        CardDetailsParams {
+                            number: "4000008260000000".to_string(), // UK visa
+                            exp_year: 2029,
+                            exp_month: 1,
+                            cvc: Some("123".to_string()),
+                            ..Default::default()
+                        },
+                    )),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
+            PaymentMethod::attach(
+                &self.local_stripe_client,
+                &pm.id,
+                AttachPaymentMethod {
+                    customer: customer.id.clone(),
+                },
+            )
+            .await
+            .unwrap();
+
+            pm
+        };
+
         let product = {
             let product = CreateProduct::new("Shuttle Pro");
 
@@ -195,6 +212,7 @@ impl TestApp {
                 .unwrap()
         };
 
+        // TODO: why does price panic?
         let price = {
             let mut price = CreatePrice::new(Currency::USD);
             price.product = Some(IdOrCreate::Id(&product.id));
@@ -218,6 +236,7 @@ impl TestApp {
                 price: Some(price.id.to_string()),
                 ..Default::default()
             }]);
+            params.default_payment_method = Some(&payment_method.id);
             params.expand = &["items", "items.data.price.product", "schedule"];
 
             stripe::Subscription::create(&self.local_stripe_client, params)
