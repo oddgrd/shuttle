@@ -169,6 +169,31 @@ mod needs_docker {
     }
 
     #[tokio::test]
+    async fn insert_and_increment_and_delete_rds_subscription() {
+        let app = app().await;
+
+        // Create user first so one exists in the database.
+        let response = app.post_user("test-user", "basic").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // Send a request to insert an RDS subscription for the test user.
+
+        // Fetch the user and verify they have an rds subscription.
+        // We will sync the subscriptions here, so we should mock the call to stripe.
+        // The sync is needed to ensure the subscription is active.
+
+        // Send another request to insert an RDS subscription for the user.
+
+        // Fetch the user and verify their rds subscription quantity was incremented.
+        // We will sync the subscriptions here, so we should mock the call to stripe.
+
+        // Send a request to cancel an RDS subscription, and verify it is marked to
+        // cancel at the end of the period.
+        // We will sync the subscriptions here, so we should mock the call to stripe.
+    }
+
+    #[tokio::test]
     async fn unsuccessful_upgrade_to_pro() {
         let app = app().await;
 

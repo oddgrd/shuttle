@@ -1,6 +1,8 @@
+use std::borrow::BorrowMut;
+
 use crate::{
     error::Error,
-    user::{AccountName, Admin, Key, User},
+    user::{AccountName, Admin, Key, ShuttleSubscriptionType, User},
 };
 use axum::{
     extract::{Path, State},
@@ -65,6 +67,53 @@ pub(crate) async fn update_user_tier(
             .await?;
     };
 
+    Ok(())
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SubscriptionPayload {
+    pub session: stripe::CheckoutSession,
+    pub r#type: ShuttleSubscriptionType,
+}
+
+// Add a new non-pro subscription, or increment the quantity.
+// TODO: take price ID to determine type of subscription? Or have console send
+// type as well?
+// What if the user subscribes to several price_ids for the rds product?
+// What if we want to support different configs for rds, e.g. different instance sizes?
+// If the checkout is completed in the console, why do we need to send the checkout session
+// to the backend?
+// Do we need to send a checkout session from the console?
+#[instrument(skip(user_manager, account_name), fields(account.name = %account_name))]
+pub(crate) async fn add_subscription(
+    _: Admin,
+    State(user_manager): State<UserManagerState>,
+    Path(account_name): Path<AccountName>,
+    Json(SubscriptionPayload { session, r#type }): Json<SubscriptionPayload>,
+) -> Result<(), Error> {
+    // fetch the users subscriptions
+    let User { subscriptions, .. } = user_manager.get_user(account_name).await?;
+    // check if subscription of given type (price id?) already exists
+    let existing_subscription = subscriptions.iter().find(|sub| sub.r#type == r#type);
+
+    if let Some(existing_subscription) = existing_subscription {
+        // TODO: increase quantity of subscription in state.
+    } else {
+        // TODO: insert subscription into state.
+    }
+
+    Ok(())
+}
+
+// Find subscription of given ID and delete it. This should only be done when the subscription
+// is fully cancelled.
+// TODO: should rds subscription be cancelled immediately or at end of period?
+#[instrument(skip(_user_manager, account_name), fields(account.name = %account_name))]
+pub(crate) async fn delete_subscription(
+    _: Admin,
+    State(_user_manager): State<UserManagerState>,
+    Path((account_name, subscription_id)): Path<(AccountName, String)>,
+) -> Result<(), Error> {
     Ok(())
 }
 
@@ -142,6 +191,7 @@ pub(crate) async fn convert_key(
         account_tier,
     );
 
+    // TODO: check users subscriptions for RDS subs, set rds_quota on claim limits to sub quantity.
     let token = claim.into_token(key_manager.private_key())?;
 
     let response = shuttle_common::backends::auth::ConvertResponse { token };

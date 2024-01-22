@@ -31,6 +31,17 @@ pub trait UserManagement: Send + Sync {
     async fn get_user(&self, name: AccountName) -> Result<User, Error>;
     async fn get_user_by_key(&self, key: ApiKey) -> Result<User, Error>;
     async fn reset_key(&self, name: AccountName) -> Result<(), Error>;
+    async fn insert_subscription(
+        &self,
+        name: AccountName,
+        r#type: ShuttleSubscriptionType,
+    ) -> Result<(), Error>;
+    async fn increment_subscription_quantity(
+        &self,
+        name: AccountName,
+        r#type: ShuttleSubscriptionType,
+    ) -> Result<(), Error>;
+    // TODO: add delete sub method.
 }
 
 #[derive(Clone)]
@@ -207,6 +218,22 @@ impl UserManagement for UserManager {
             Err(Error::UserNotFound)
         }
     }
+
+    async fn insert_subscription(
+        &self,
+        name: AccountName,
+        r#type: ShuttleSubscriptionType,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
+
+    async fn increment_subscription_quantity(
+        &self,
+        name: AccountName,
+        r#type: ShuttleSubscriptionType,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -225,7 +252,7 @@ pub struct Subscription {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug, EnumString, strum::Display)]
+#[derive(Clone, Debug, EnumString, strum::Display, Deserialize, Eq, PartialEq)]
 #[strum(serialize_all = "lowercase")]
 pub enum ShuttleSubscriptionType {
     Pro,
