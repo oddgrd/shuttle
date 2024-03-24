@@ -117,9 +117,11 @@ pub async fn start(loader: impl Loader + Send + 'static, runner: impl Runner + S
 
     println!("load response: {:?}", load);
 
+    let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), 3002);
+
     let start = alpha
         .start(StartRequest {
-            ip: "http://0.0.0.0:3002".to_string(),
+            ip: addr.to_string(),
             resources: Default::default(),
         })
         .await
