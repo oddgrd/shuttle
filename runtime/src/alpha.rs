@@ -12,7 +12,7 @@ use async_trait::async_trait;
 use core::future::Future;
 use shuttle_common::secrets::Secret;
 use shuttle_proto::runtime::StopReason;
-use shuttle_service::{Error, ResourceFactory, Service};
+use shuttle_service::{Environment, Error, ResourceFactory, Service};
 use tokio::sync::{
     broadcast::{self, Sender},
     oneshot,
@@ -110,7 +110,7 @@ pub async fn start(loader: impl Loader + Send + 'static, runner: impl Runner + S
         .load(LoadRequest {
             secrets: Default::default(),
             project_name: "test-proj".to_string(),
-            env: "deployment".to_string(),
+            env: Environment::Deployment.to_string(),
         })
         .await
         .unwrap();
